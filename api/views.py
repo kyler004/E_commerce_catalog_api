@@ -6,6 +6,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.pagination import PageNumberPagination
 from .models import Category, Product, Variant, Inventory
 from .serializers import CategorySerializer, ProductSerializer, VariantSerializer, InventorySerializer
+from .filters import ProductFilter
 
 class StandardPagination(PageNumberPagination):
     page_size = 10  # Default items per page
@@ -26,7 +27,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     pagination_class = StandardPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['category', 'price']  # e.g., filter by category or price range
+    filterset_class = ProductFilter
     search_fields = ['name', 'description']  # Full-text search
     ordering_fields = ['price', 'created_at']
 
