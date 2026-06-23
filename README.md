@@ -15,6 +15,7 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
   - **Category**
 - **Authentication:** Email/password registration with OTP email verification, JWT login, and OTP-based password reset.
 - **Shopping Cart:** Server-side cart per verified user with variant line items, stock validation, and price snapshotting.
+- **Orders / Checkout:** Convert cart to order with shipping address; stub payment flow decrements inventory on confirmation.
 
 ## proper Tech Stack
 
@@ -82,6 +83,8 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
     python manage.py migrate
     ```
 
+    If you see an `InconsistentMigrationHistory` error after pulling model changes, your local DB was migrated before the custom user model existed. Reset an empty dev database with `dropdb`/`createdb` (or `docker compose down -v`) and run `migrate` again.
+
 7.  **Run the development server**
 
     ```bash
@@ -95,7 +98,7 @@ The API will be available at `http://127.0.0.1:8000/api/`.
 Tests use an in-memory SQLite database so PostgreSQL does not need to be running:
 
 ```bash
-python manage.py test accounts api cart
+python manage.py test accounts api cart orders
 ```
 
 ## Authentication
@@ -138,7 +141,7 @@ Content-Type: application/json
 
 ## Shopping Cart
 
-Cart endpoints are at `/api/cart/`. All cart operations require a verified user JWT. Stock is validated against inventory but not decremented until checkout (future).
+Cart endpoints are at `/api/cart/`. All cart operations require a verified user JWT. Stock is validated against inventory but not decremented until payment is confirmed.
 
 | Endpoint | Method | Description |
 | :------- | :----- | :---------- |
@@ -154,6 +157,41 @@ Authorization: Bearer <access_token>
 Content-Type: application/json
 
 { "variant": 1, "quantity": 2 }
+```
+
+## Orders / Checkout
+
+Order endpoints are at `/api/orders/`. Checkout converts the cart into a **pending** order with a shipping address and clears the cart. Inventory is decremented only when payment is confirmed via the stub endpoint.
+
+### Checkout flow
+
+1. Add items to cart
+2. `POST /api/orders/checkout/` with shipping address → order `pending`, cart cleared
+3. `POST /api/orders/{id}/confirm-payment/` → order `paid`, inventory decremented
+4. Or `POST /api/orders/{id}/cancel/` on a pending order → order `cancelled`
+
+| Endpoint | Method | Description |
+| :------- | :----- | :---------- |
+| `/api/orders/checkout/` | POST | Create order from cart + shipping |
+| `/api/orders/` | GET | List user's orders (paginated) |
+| `/api/orders/{id}/` | GET | Order detail |
+| `/api/orders/{id}/confirm-payment/` | POST | Stub payment confirmation |
+| `/api/orders/{id}/cancel/` | POST | Cancel pending order |
+
+```http
+POST /api/orders/checkout/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "shipping": {
+    "full_name": "Jane Doe",
+    "address_line1": "123 Main St",
+    "city": "Paris",
+    "postal_code": "75001",
+    "country": "FR"
+  }
+}
 ```
 
 ## API Endpoints

@@ -8,6 +8,8 @@ This document describes all HTTP routes exposed by the E-commerce Catalog API. R
 
 **Cart base URL:** `http://127.0.0.1:8000/api/cart/`
 
+**Orders base URL:** `http://127.0.0.1:8000/api/orders/`
+
 ---
 
 ## Authentication
@@ -193,6 +195,108 @@ Authorization: Bearer <access_token>
 | Price | `unit_price` refreshed from catalog on add/update |
 | Ownership | Users can only access their own cart items (404 for others) |
 | Inventory | Cart does not reserve or decrement stock |
+
+---
+
+## Orders / Checkout
+
+All order endpoints require a JWT from a **verified** user. Checkout creates a **pending** order from the cart with immutable line snapshots and a shipping address, then clears the cart. Inventory is decremented **only** when payment is confirmed via the stub endpoint.
+
+### Order endpoints
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `POST` | `/api/orders/checkout/` | Create order from cart + shipping address |
+| `GET` | `/api/orders/` | List current user's orders (paginated) |
+| `GET` | `/api/orders/{id}/` | Order detail with items and shipping |
+| `POST` | `/api/orders/{id}/confirm-payment/` | Stub payment; decrements inventory |
+| `POST` | `/api/orders/{id}/cancel/` | Cancel a pending order |
+
+### Checkout
+
+```http
+POST /api/orders/checkout/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "shipping": {
+    "full_name": "Jane Doe",
+    "address_line1": "123 Main St",
+    "address_line2": "Apt 4",
+    "city": "Paris",
+    "postal_code": "75001",
+    "country": "FR",
+    "phone": "+33600000000"
+  }
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "id": 1,
+  "status": "pending",
+  "subtotal": "159.98",
+  "total": "159.98",
+  "items": [
+    {
+      "id": 1,
+      "variant": 1,
+      "product_name": "Wireless Headphones",
+      "sku": "WH-L-RED",
+      "size": "L",
+      "color": "Red",
+      "quantity": 2,
+      "unit_price": "79.99",
+      "line_total": "159.98"
+    }
+  ],
+  "shipping": {
+    "full_name": "Jane Doe",
+    "address_line1": "123 Main St",
+    "address_line2": "Apt 4",
+    "city": "Paris",
+    "postal_code": "75001",
+    "country": "FR",
+    "phone": "+33600000000"
+  },
+  "created_at": "2026-06-23T10:00:00Z",
+  "updated_at": "2026-06-23T10:00:00Z",
+  "paid_at": null
+}
+```
+
+### Confirm payment (stub)
+
+```http
+POST /api/orders/1/confirm-payment/
+Authorization: Bearer <access_token>
+```
+
+**Response (200):** order with `"status": "paid"` and `paid_at` set.
+
+Returns `400` if stock is insufficient at payment time; order remains `pending`.
+
+### Cancel order
+
+```http
+POST /api/orders/1/cancel/
+Authorization: Bearer <access_token>
+```
+
+Only **pending** orders can be cancelled. No inventory is restored (stock was never decremented).
+
+### Order business rules
+
+| Rule | Behavior |
+| :--- | :------- |
+| Checkout | Validates cart stock; creates snapshots; clears cart |
+| Payment | Stub only; decrements inventory under row locks |
+| Pending cancel | Allowed; no inventory change |
+| Paid cancel | Not allowed in v1 |
+| Ownership | Users see only their own orders |
 
 ---
 
@@ -525,6 +629,11 @@ A category detail response nests the full product tree:
 | [`cart/serializers.py`](../cart/serializers.py) | Cart request/response schemas |
 | [`cart/models.py`](../cart/models.py) | Cart and CartItem models |
 | [`cart/services.py`](../cart/services.py) | Cart business logic |
+| [`orders/urls.py`](../orders/urls.py) | Order route registration |
+| [`orders/views.py`](../orders/views.py) | Order API views |
+| [`orders/serializers.py`](../orders/serializers.py) | Order request/response schemas |
+| [`orders/models.py`](../orders/models.py) | Order, OrderItem, ShippingAddress models |
+| [`orders/services.py`](../orders/services.py) | Checkout and payment stub logic |
 | [`api/urls.py`](../api/urls.py) | Catalog router registration |
 | [`api/views.py`](../api/views.py) | ViewSets, pagination, filter backends |
 | [`api/serializers.py`](../api/serializers.py) | Request/response schemas |
