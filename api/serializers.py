@@ -11,7 +11,7 @@ class VariantSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Variant
-        fields = ['id', 'size', 'color', 'sku', 'inventory']
+        fields = ['id', 'product', 'size', 'color', 'sku', 'inventory']
 
 class ProductSerializer(serializers.ModelSerializer):
     variants = VariantSerializer(many=True, read_only=True)  # Nested list of variants

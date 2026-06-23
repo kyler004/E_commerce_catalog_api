@@ -20,12 +20,14 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
 - **Framework:** Django 5.x
 - **API Toolkit:** Django REST Framework
 - **Filtering:** django-filter
+- **Database:** PostgreSQL
 
 ## Getting Started
 
 ### Prerequisites
 
 - Python 3.8 or higher installed.
+- PostgreSQL 14+ (local install or Docker via `docker compose`).
 
 ### Installation
 
@@ -49,18 +51,49 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
     pip install -r requirements.txt
     ```
 
-4.  **Apply database migrations**
+4.  **Configure environment variables**
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Edit `.env` if your PostgreSQL credentials differ from the defaults.
+
+5.  **Start PostgreSQL (Docker)**
+
+    ```bash
+    docker-compose up -d db
+    ```
+
+    Wait until the database is healthy, then continue.
+
+    If you already have PostgreSQL running on port 5432, create the database manually instead:
+
+    ```bash
+    createdb -U postgres ecommerce_catalog
+    ```
+
+6.  **Apply database migrations**
 
     ```bash
     python manage.py migrate
     ```
 
-5.  **Run the development server**
+7.  **Run the development server**
+
     ```bash
     python manage.py runserver
     ```
 
 The API will be available at `http://127.0.0.1:8000/api/`.
+
+### Running tests
+
+Tests use an in-memory SQLite database so PostgreSQL does not need to be running:
+
+```bash
+python manage.py test api
+```
 
 ## API Endpoints
 
