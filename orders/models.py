@@ -19,6 +19,8 @@ class Order(models.Model):
         default=Status.PENDING,
     )
     subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    promotion_code = models.CharField(max_length=50, blank=True)
     total = models.DecimalField(max_digits=12, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

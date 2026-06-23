@@ -96,6 +96,9 @@ def remove_item(user, item_id):
 def clear_cart(user):
     cart = get_or_create_cart(user)
     cart.items.all().delete()
+    if cart.applied_promotion_id is not None:
+        cart.applied_promotion = None
+        cart.save(update_fields=['applied_promotion', 'updated_at'])
     _touch_cart(cart)
     return cart
 

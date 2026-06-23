@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -10,6 +12,11 @@ from cart.services import (
     validate_quantity,
 )
 from orders.models import Order, OrderItem, ShippingAddress
+from promotions.services import (
+    PromotionError,
+    increment_promotion_usage,
+    resolve_promotion_for_checkout,
+)
 
 
 class OrderValidationError(Exception):
@@ -54,11 +61,24 @@ def checkout(user, shipping_data):
             raise OrderValidationError(str(exc)) from exc
 
     summary = compute_cart_summary(cart)
+    promotion_code = ''
+    discount_amount = Decimal('0.00')
+    if cart.applied_promotion_id is not None:
+        try:
+            promotion_code, discount_amount = resolve_promotion_for_checkout(
+                cart, summary['subtotal']
+            )
+        except PromotionError as exc:
+            raise OrderValidationError(str(exc)) from exc
+
+    total = max(summary['subtotal'] - discount_amount, Decimal('0.00'))
     order = Order.objects.create(
         user=user,
         status=Order.Status.PENDING,
         subtotal=summary['subtotal'],
-        total=summary['subtotal'],
+        discount_amount=discount_amount,
+        promotion_code=promotion_code,
+        total=total,
     )
 
     ShippingAddress.objects.create(order=order, **shipping_data)

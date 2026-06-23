@@ -48,6 +48,8 @@ class OrderSerializer(serializers.ModelSerializer):
             'id',
             'status',
             'subtotal',
+            'discount_amount',
+            'promotion_code',
             'total',
             'items',
             'shipping',

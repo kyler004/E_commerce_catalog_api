@@ -9,6 +9,13 @@ class Cart(models.Model):
         on_delete=models.CASCADE,
         related_name='cart',
     )
+    applied_promotion = models.ForeignKey(
+        'promotions.Promotion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='carts',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
