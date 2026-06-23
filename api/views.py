@@ -4,6 +4,9 @@ from django.shortcuts import render
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import AllowAny, IsAuthenticated
+
+from accounts.permissions import IsEmailVerified
 from .models import Category, Product, Variant, Inventory
 from .serializers import CategorySerializer, ProductSerializer, VariantSerializer, InventorySerializer
 from .filters import ProductFilter
@@ -13,7 +16,15 @@ class StandardPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class CategoryViewSet(viewsets.ModelViewSet):
+
+class CatalogWritePermissionMixin:
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [AllowAny()]
+        return [IsAuthenticated(), IsEmailVerified()]
+
+
+class CategoryViewSet(CatalogWritePermissionMixin, viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     pagination_class = StandardPagination
@@ -22,7 +33,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description']  # Search in these fields
     ordering_fields = ['name', 'created_at']  # Allow ordering
 
-class ProductViewSet(viewsets.ModelViewSet):
+class ProductViewSet(CatalogWritePermissionMixin, viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     pagination_class = StandardPagination
@@ -32,7 +43,7 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering_fields = ['price', 'created_at']
 
 # Similarly for Variant and Inventory
-class VariantViewSet(viewsets.ModelViewSet):
+class VariantViewSet(CatalogWritePermissionMixin, viewsets.ModelViewSet):
     queryset = Variant.objects.all()
     serializer_class = VariantSerializer
     pagination_class = StandardPagination
@@ -40,7 +51,7 @@ class VariantViewSet(viewsets.ModelViewSet):
     filterset_fields = ['product', 'size', 'color']
     search_fields = ['sku']
 
-class InventoryViewSet(viewsets.ModelViewSet):
+class InventoryViewSet(CatalogWritePermissionMixin, viewsets.ModelViewSet):
     queryset = Inventory.objects.all()
     serializer_class = InventorySerializer
     pagination_class = StandardPagination

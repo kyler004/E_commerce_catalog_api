@@ -4,6 +4,96 @@ This document describes all HTTP routes exposed by the E-commerce Catalog API. R
 
 **Base URL (development):** `http://127.0.0.1:8000/api/`
 
+**Auth base URL:** `http://127.0.0.1:8000/api/auth/`
+
+---
+
+## Authentication
+
+Catalog list/retrieve endpoints are public. Create, update, and delete operations require a JWT from a verified user:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+### Auth endpoints
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `POST` | `/api/auth/register/` | Register with email and password; sends signup OTP |
+| `POST` | `/api/auth/verify-email/` | Verify signup OTP and activate account |
+| `POST` | `/api/auth/resend-otp/` | Resend OTP for `signup` or `password_reset` |
+| `POST` | `/api/auth/login/` | Login with email and password; returns JWT pair |
+| `POST` | `/api/auth/token/refresh/` | Refresh access token |
+| `POST` | `/api/auth/forgot-password/` | Send password reset OTP |
+| `POST` | `/api/auth/reset-password/` | Reset password with OTP |
+| `GET` | `/api/auth/me/` | Current user profile |
+
+### Register
+
+```http
+POST /api/auth/register/
+Content-Type: application/json
+
+{ "email": "user@example.com", "password": "SecurePass123!" }
+```
+
+**Response (201):**
+
+```json
+{ "detail": "Verification code sent to your email." }
+```
+
+### Verify email
+
+```http
+POST /api/auth/verify-email/
+Content-Type: application/json
+
+{ "email": "user@example.com", "otp": "123456" }
+```
+
+### Login
+
+```http
+POST /api/auth/login/
+Content-Type: application/json
+
+{ "email": "user@example.com", "password": "SecurePass123!" }
+```
+
+**Response (200):**
+
+```json
+{
+  "access": "<jwt>",
+  "refresh": "<jwt>"
+}
+```
+
+### Forgot / reset password
+
+```http
+POST /api/auth/forgot-password/
+{ "email": "user@example.com" }
+
+POST /api/auth/reset-password/
+{ "email": "user@example.com", "otp": "123456", "new_password": "NewSecurePass456!" }
+```
+
+### SMTP configuration
+
+OTP emails require SMTP settings in `.env`:
+
+| Variable | Description |
+| :------- | :---------- |
+| `EMAIL_HOST` | SMTP server hostname |
+| `EMAIL_PORT` | SMTP port (default `587`) |
+| `EMAIL_HOST_USER` | SMTP username |
+| `EMAIL_HOST_PASSWORD` | SMTP password |
+| `EMAIL_USE_TLS` | `True` or `False` |
+| `DEFAULT_FROM_EMAIL` | Sender address |
+
 ---
 
 ## Route Overview
@@ -15,7 +105,7 @@ This document describes all HTTP routes exposed by the E-commerce Catalog API. R
 | Variants     | `/api/variants/`    | `VariantViewSet`   |
 | Inventory    | `/api/inventories/` | `InventoryViewSet` |
 
-Each resource supports standard REST actions:
+Each resource supports standard REST actions. **Write operations** (`POST`, `PUT`, `PATCH`, `DELETE`) require a JWT from a verified user. **Read operations** (`GET`) are public.
 
 | Method   | URL pattern              | Action   | Description              |
 | :------- | :----------------------- | :------- | :----------------------- |
@@ -314,7 +404,10 @@ A category detail response nests the full product tree:
 | 201  | Created (POST)                               |
 | 204  | No content (DELETE)                          |
 | 400  | Bad request (validation error)               |
+| 401  | Unauthorized (missing or invalid token)      |
+| 403  | Forbidden (e.g. unverified email)            |
 | 404  | Resource not found                           |
+| 429  | Too many requests (OTP rate limit)           |
 
 ---
 
@@ -322,7 +415,12 @@ A category detail response nests the full product tree:
 
 | File | Purpose |
 | :--- | :------ |
-| [`api/urls.py`](../api/urls.py) | Router registration |
+| [`accounts/urls.py`](../accounts/urls.py) | Auth route registration |
+| [`accounts/views.py`](../accounts/views.py) | Auth API views |
+| [`accounts/serializers.py`](../accounts/serializers.py) | Auth request/response schemas |
+| [`accounts/models.py`](../accounts/models.py) | User and EmailOTP models |
+| [`accounts/services/otp.py`](../accounts/services/otp.py) | OTP generation and validation |
+| [`api/urls.py`](../api/urls.py) | Catalog router registration |
 | [`api/views.py`](../api/views.py) | ViewSets, pagination, filter backends |
 | [`api/serializers.py`](../api/serializers.py) | Request/response schemas |
 | [`api/filters.py`](../api/filters.py) | Product filter definitions |

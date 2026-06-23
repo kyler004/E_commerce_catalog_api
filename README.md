@@ -13,12 +13,14 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
   - **Price Range** (`min_price`, `max_price`)
   - **Attributes** (`color`, `size`)
   - **Category**
+- **Authentication:** Email/password registration with OTP email verification, JWT login, and OTP-based password reset.
 
 ## proper Tech Stack
 
 - **Language:** Python 3.12+
 - **Framework:** Django 5.x
 - **API Toolkit:** Django REST Framework
+- **Authentication:** djangorestframework-simplejwt (JWT)
 - **Filtering:** django-filter
 - **Database:** PostgreSQL
 
@@ -57,7 +59,7 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
     cp .env.example .env
     ```
 
-    Edit `.env` if your PostgreSQL credentials differ from the defaults.
+    Edit `.env` with your PostgreSQL credentials and SMTP settings (required for OTP emails).
 
 5.  **Start PostgreSQL (Docker)**
 
@@ -92,15 +94,53 @@ The API will be available at `http://127.0.0.1:8000/api/`.
 Tests use an in-memory SQLite database so PostgreSQL does not need to be running:
 
 ```bash
-python manage.py test api
+python manage.py test accounts api
 ```
+
+## Authentication
+
+Auth endpoints are mounted at `/api/auth/`. Catalog **read** endpoints are public; **write** endpoints require a verified user JWT.
+
+### Signup flow
+
+1. `POST /api/auth/register/` with `{ "email", "password" }` — creates an inactive account and sends a 6-digit OTP by email.
+2. `POST /api/auth/verify-email/` with `{ "email", "otp" }` — verifies the account.
+3. `POST /api/auth/login/` with `{ "email", "password" }` — returns `{ "access", "refresh" }` JWT tokens.
+
+### Password reset flow
+
+1. `POST /api/auth/forgot-password/` with `{ "email" }` — sends a reset OTP if the account exists.
+2. `POST /api/auth/reset-password/` with `{ "email", "otp", "new_password" }` — sets a new password.
+
+### Authenticated catalog writes
+
+Include the access token on write requests:
+
+```http
+POST /api/products/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+### Auth endpoints
+
+| Endpoint | Method | Description |
+| :------- | :----- | :---------- |
+| `/api/auth/register/` | POST | Register with email and password |
+| `/api/auth/verify-email/` | POST | Verify signup OTP |
+| `/api/auth/resend-otp/` | POST | Resend OTP (`purpose`: `signup` or `password_reset`) |
+| `/api/auth/login/` | POST | Login and receive JWT tokens |
+| `/api/auth/token/refresh/` | POST | Refresh access token |
+| `/api/auth/forgot-password/` | POST | Request password reset OTP |
+| `/api/auth/reset-password/` | POST | Reset password with OTP |
+| `/api/auth/me/` | GET | Current user profile (authenticated) |
 
 ## API Endpoints
 
 | Resource       | Endpoint                | Description                          |
 | :------------- | :---------------------- | :----------------------------------- |
 | **Products**   | `GET /api/products/`    | List all products. Supports filters. |
-|                | `POST /api/products/`   | Create a new product.                |
+|                | `POST /api/products/`   | Create a new product (auth required). |
 | **Categories** | `GET /api/categories/`  | List all categories.                 |
 | **Variants**   | `GET /api/variants/`    | List product variants.               |
 | **Inventory**  | `GET /api/inventories/` | Check stock levels.                  |

@@ -2,9 +2,11 @@ from decimal import Decimal
 
 from django.db import IntegrityError
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from accounts.models import User
 from .models import Category, Inventory, Product, Variant
 
 
@@ -13,6 +15,14 @@ class CatalogFixturesMixin:
 
     def setUp(self):
         self.client = APIClient()
+        self.user = User.objects.create_user(
+            email='catalog@test.com',
+            password='TestPass123!',
+            is_active=True,
+        )
+        self.user.email_verified_at = timezone.now()
+        self.user.save(update_fields=['email_verified_at'])
+        self.client.force_authenticate(user=self.user)
         self.category = Category.objects.create(
             name="Electronics",
             description="Electronic devices",
@@ -565,3 +575,43 @@ class ModelTestCase(CatalogFixturesMixin, TestCase):
                 color="Red",
                 sku="WH-L-RED",
             )
+
+
+class CatalogWriteAuthTestCase(CatalogFixturesMixin, TestCase):
+    def test_unauthenticated_create_product_returns_401(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            "/api/products/",
+            {
+                "name": "Blocked Product",
+                "description": "Should fail",
+                "price": "10.00",
+                "category": self.category.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_unverified_user_create_product_returns_403(self):
+        unverified = User.objects.create_user(
+            email='unverified@test.com',
+            password='TestPass123!',
+            is_active=False,
+        )
+        self.client.force_authenticate(user=unverified)
+        response = self.client.post(
+            "/api/products/",
+            {
+                "name": "Blocked Product",
+                "description": "Should fail",
+                "price": "10.00",
+                "category": self.category.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_list_products_still_allowed(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.get("/api/products/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
