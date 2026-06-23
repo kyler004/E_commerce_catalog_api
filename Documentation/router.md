@@ -6,6 +6,8 @@ This document describes all HTTP routes exposed by the E-commerce Catalog API. R
 
 **Auth base URL:** `http://127.0.0.1:8000/api/auth/`
 
+**Cart base URL:** `http://127.0.0.1:8000/api/cart/`
+
 ---
 
 ## Authentication
@@ -93,6 +95,104 @@ OTP emails require SMTP settings in `.env`:
 | `EMAIL_HOST_PASSWORD` | SMTP password |
 | `EMAIL_USE_TLS` | `True` or `False` |
 | `DEFAULT_FROM_EMAIL` | Sender address |
+
+---
+
+## Shopping Cart
+
+All cart endpoints require a JWT from a **verified** user. Carts are server-side (one per user). Line items reference catalog **variants**. Prices are snapshotted from `Product.price` on add/update. Stock is checked against `Inventory.quantity` but inventory is **not** decremented by cart operations.
+
+### Cart endpoints
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `GET` | `/api/cart/` | Current user's cart (auto-created if empty) |
+| `DELETE` | `/api/cart/` | Remove all items from cart |
+| `POST` | `/api/cart/items/` | Add variant or increment existing line |
+| `PATCH` | `/api/cart/items/{id}/` | Update line quantity |
+| `DELETE` | `/api/cart/items/{id}/` | Remove line item |
+
+### Add item
+
+```http
+POST /api/cart/items/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "variant": 1, "quantity": 2 }
+```
+
+**Response (201):**
+
+```json
+{
+  "id": 10,
+  "variant": {
+    "id": 1,
+    "sku": "WH-L-RED",
+    "size": "L",
+    "color": "Red",
+    "product_name": "Wireless Headphones",
+    "available_quantity": 50
+  },
+  "quantity": 2,
+  "unit_price": "79.99",
+  "line_total": "159.98",
+  "cart": {
+    "id": 1,
+    "items": [],
+    "item_count": 2,
+    "subtotal": "159.98",
+    "updated_at": "2026-06-22T10:00:00Z"
+  }
+}
+```
+
+Adding the same variant again **merges** into one row (quantities are summed).
+
+### Get cart
+
+```http
+GET /api/cart/
+Authorization: Bearer <access_token>
+```
+
+**Response (200):**
+
+```json
+{
+  "id": 1,
+  "items": [
+    {
+      "id": 10,
+      "variant": {
+        "id": 1,
+        "sku": "WH-L-RED",
+        "size": "L",
+        "color": "Red",
+        "product_name": "Wireless Headphones",
+        "available_quantity": 48
+      },
+      "quantity": 2,
+      "unit_price": "79.99",
+      "line_total": "159.98"
+    }
+  ],
+  "item_count": 2,
+  "subtotal": "159.98",
+  "updated_at": "2026-06-22T10:00:00Z"
+}
+```
+
+### Business rules
+
+| Rule | Behavior |
+| :--- | :------- |
+| Duplicate variant | One row per variant; POST increments quantity |
+| Stock limit | `quantity` must not exceed `Inventory.quantity` |
+| Price | `unit_price` refreshed from catalog on add/update |
+| Ownership | Users can only access their own cart items (404 for others) |
+| Inventory | Cart does not reserve or decrement stock |
 
 ---
 
@@ -420,6 +520,11 @@ A category detail response nests the full product tree:
 | [`accounts/serializers.py`](../accounts/serializers.py) | Auth request/response schemas |
 | [`accounts/models.py`](../accounts/models.py) | User and EmailOTP models |
 | [`accounts/services/otp.py`](../accounts/services/otp.py) | OTP generation and validation |
+| [`cart/urls.py`](../cart/urls.py) | Cart route registration |
+| [`cart/views.py`](../cart/views.py) | Cart API views |
+| [`cart/serializers.py`](../cart/serializers.py) | Cart request/response schemas |
+| [`cart/models.py`](../cart/models.py) | Cart and CartItem models |
+| [`cart/services.py`](../cart/services.py) | Cart business logic |
 | [`api/urls.py`](../api/urls.py) | Catalog router registration |
 | [`api/views.py`](../api/views.py) | ViewSets, pagination, filter backends |
 | [`api/serializers.py`](../api/serializers.py) | Request/response schemas |

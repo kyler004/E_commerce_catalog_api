@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'accounts',
     'api',
+    'cart',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'

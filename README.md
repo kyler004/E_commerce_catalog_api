@@ -14,6 +14,7 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
   - **Attributes** (`color`, `size`)
   - **Category**
 - **Authentication:** Email/password registration with OTP email verification, JWT login, and OTP-based password reset.
+- **Shopping Cart:** Server-side cart per verified user with variant line items, stock validation, and price snapshotting.
 
 ## proper Tech Stack
 
@@ -94,7 +95,7 @@ The API will be available at `http://127.0.0.1:8000/api/`.
 Tests use an in-memory SQLite database so PostgreSQL does not need to be running:
 
 ```bash
-python manage.py test accounts api
+python manage.py test accounts api cart
 ```
 
 ## Authentication
@@ -134,6 +135,26 @@ Content-Type: application/json
 | `/api/auth/forgot-password/` | POST | Request password reset OTP |
 | `/api/auth/reset-password/` | POST | Reset password with OTP |
 | `/api/auth/me/` | GET | Current user profile (authenticated) |
+
+## Shopping Cart
+
+Cart endpoints are at `/api/cart/`. All cart operations require a verified user JWT. Stock is validated against inventory but not decremented until checkout (future).
+
+| Endpoint | Method | Description |
+| :------- | :----- | :---------- |
+| `/api/cart/` | GET | View cart with items and totals |
+| `/api/cart/` | DELETE | Clear all cart items |
+| `/api/cart/items/` | POST | Add or increment `{ "variant", "quantity" }` |
+| `/api/cart/items/{id}/` | PATCH | Update item quantity |
+| `/api/cart/items/{id}/` | DELETE | Remove item |
+
+```http
+POST /api/cart/items/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "variant": 1, "quantity": 2 }
+```
 
 ## API Endpoints
 
