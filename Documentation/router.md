@@ -10,6 +10,10 @@ This document describes all HTTP routes exposed by the E-commerce Catalog API. R
 
 **Orders base URL:** `http://127.0.0.1:8000/api/orders/`
 
+**Promotions base URL:** `http://127.0.0.1:8000/api/promotions/`
+
+**Wishlist base URL:** `http://127.0.0.1:8000/api/wishlist/`
+
 ---
 
 ## Authentication
@@ -113,6 +117,8 @@ All cart endpoints require a JWT from a **verified** user. Carts are server-side
 | `POST` | `/api/cart/items/` | Add variant or increment existing line |
 | `PATCH` | `/api/cart/items/{id}/` | Update line quantity |
 | `DELETE` | `/api/cart/items/{id}/` | Remove line item |
+| `POST` | `/api/cart/apply-promo/` | Apply promotion code |
+| `DELETE` | `/api/cart/promo/` | Remove applied promotion |
 
 ### Add item
 
@@ -300,6 +306,112 @@ Only **pending** orders can be cancelled. No inventory is restored (stock was ne
 
 ---
 
+## Promotions
+
+Staff manage discount codes at `/api/promotions/`. Verified users apply codes to their cart; discount is previewed on cart GET and finalized at checkout. Promotion `used_count` increments when payment is confirmed.
+
+### Promotion endpoints (staff)
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `GET` | `/api/promotions/` | List promotions (paginated) |
+| `POST` | `/api/promotions/` | Create promotion |
+| `GET` | `/api/promotions/{id}/` | Promotion detail |
+| `PATCH` | `/api/promotions/{id}/` | Update promotion |
+| `DELETE` | `/api/promotions/{id}/` | Delete promotion |
+
+### Cart promo endpoints (verified user)
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `POST` | `/api/cart/apply-promo/` | Apply code `{ "code": "SAVE10" }` |
+| `DELETE` | `/api/cart/promo/` | Remove applied promotion |
+
+### Create promotion (staff)
+
+```http
+POST /api/promotions/
+Authorization: Bearer <staff_access_token>
+Content-Type: application/json
+
+{
+  "code": "SAVE10",
+  "description": "10% off",
+  "discount_type": "percentage",
+  "discount_value": "10.00",
+  "min_order_amount": "50.00",
+  "max_uses": 100,
+  "is_active": true
+}
+```
+
+`discount_type` is `percentage` or `fixed`. Codes are stored uppercase.
+
+### Promotion business rules
+
+| Rule | Behavior |
+| :--- | :------- |
+| Validation | Checks active flag, date range, min order amount, max uses |
+| Cart preview | `GET /api/cart/` includes discount preview when a code is applied |
+| Checkout | Discount stored on order as `discount_amount` and `promotion_code` |
+| Usage count | Incremented on `confirm-payment`, not at checkout |
+
+---
+
+## Wishlist
+
+All wishlist endpoints require a JWT from a **verified** user. Items are saved at the **product** level (one row per product).
+
+### Wishlist endpoints
+
+| Method | Path | Description |
+| :----- | :--- | :---------- |
+| `GET` | `/api/wishlist/` | Current user's wishlist |
+| `POST` | `/api/wishlist/items/` | Add product `{ "product": 1 }` |
+| `DELETE` | `/api/wishlist/items/{id}/` | Remove wishlist item |
+| `POST` | `/api/wishlist/items/{id}/move-to-cart/` | Move to cart with variant |
+
+### Move to cart
+
+```http
+POST /api/wishlist/items/5/move-to-cart/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "variant": 1, "quantity": 1 }
+```
+
+Returns the created/updated cart line and updated cart summary.
+
+---
+
+## Reviews
+
+Product reviews require a **verified purchase** (a paid order containing the product). One review per user per product; rating is 1–5.
+
+### Review endpoints
+
+| Method | Path | Auth | Description |
+| :----- | :--- | :--- | :---------- |
+| `GET` | `/api/products/{id}/reviews/` | Public | List reviews (paginated) |
+| `POST` | `/api/products/{id}/reviews/` | Verified user | Create review |
+| `PATCH` | `/api/reviews/{id}/` | Owner | Update own review |
+| `DELETE` | `/api/reviews/{id}/` | Owner | Delete own review |
+
+### Create review
+
+```http
+POST /api/products/1/reviews/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "rating": 5, "title": "Great product", "body": "Would buy again." }
+```
+
+Product list/detail responses include `average_rating` and `review_count`.
+
+---
+
 ## Route Overview
 
 | Resource     | Base path           | ViewSet            |
@@ -433,6 +545,8 @@ GET /api/products/?search=laptop&ordering=price
 | `price`       | decimal | Price with up to 2 decimal places          |
 | `category`    | integer | Category ID                                |
 | `created_at`  | datetime| ISO 8601 timestamp                         |
+| `average_rating` | decimal | Mean review rating, or `null` if none   |
+| `review_count`   | integer | Number of reviews                       |
 | `variants`    | array   | Nested variants with inventory (read-only) |
 
 ### Create / update request body
@@ -634,6 +748,12 @@ A category detail response nests the full product tree:
 | [`orders/serializers.py`](../orders/serializers.py) | Order request/response schemas |
 | [`orders/models.py`](../orders/models.py) | Order, OrderItem, ShippingAddress models |
 | [`orders/services.py`](../orders/services.py) | Checkout and payment stub logic |
+| [`promotions/urls.py`](../promotions/urls.py) | Promotion route registration |
+| [`promotions/views.py`](../promotions/views.py) | Staff promotion CRUD |
+| [`promotions/services.py`](../promotions/services.py) | Promo validation and cart/checkout integration |
+| [`wishlists/urls.py`](../wishlists/urls.py) | Wishlist route registration |
+| [`wishlists/views.py`](../wishlists/views.py) | Wishlist API views |
+| [`reviews/views.py`](../reviews/views.py) | Product review API views |
 | [`api/urls.py`](../api/urls.py) | Catalog router registration |
 | [`api/views.py`](../api/views.py) | ViewSets, pagination, filter backends |
 | [`api/serializers.py`](../api/serializers.py) | Request/response schemas |

@@ -143,6 +143,12 @@ def confirm_payment(user, order_id):
         inventory.quantity -= item.quantity
         inventory.save(update_fields=['quantity', 'last_updated'])
 
+    if order.promotion_code:
+        try:
+            increment_promotion_usage(order.promotion_code)
+        except PromotionError as exc:
+            raise OrderValidationError(str(exc)) from exc
+
     order.status = Order.Status.PAID
     order.paid_at = timezone.now()
     order.save(update_fields=['status', 'paid_at', 'updated_at'])

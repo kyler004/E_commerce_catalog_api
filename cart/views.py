@@ -20,6 +20,13 @@ from cart.services import (
     remove_item,
     update_item,
 )
+from promotions.serializers import ApplyPromoSerializer
+from promotions.services import (
+    PromotionError,
+    apply_promotion_to_cart,
+    get_cart_discount_preview,
+    remove_promotion_from_cart,
+)
 
 
 class CartPermissionMixin:
@@ -29,13 +36,16 @@ class CartPermissionMixin:
 def _serialize_cart(cart):
     items = cart.items.select_related('variant__product', 'variant__inventory')
     summary = compute_cart_summary(cart)
-    return CartSerializer({
+    data = {
         'id': cart.id,
         'items': items,
         'item_count': summary['item_count'],
         'subtotal': summary['subtotal'],
         'updated_at': cart.updated_at,
-    }).data
+    }
+    serialized = CartSerializer(data).data
+    serialized['promotion'] = get_cart_discount_preview(cart, summary['subtotal'])
+    return serialized
 
 
 class CartDetailView(CartPermissionMixin, APIView):
@@ -99,3 +109,22 @@ class CartItemDetailView(CartPermissionMixin, APIView):
         except CartItem.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CartApplyPromoView(CartPermissionMixin, APIView):
+    def post(self, request):
+        serializer = ApplyPromoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        cart = get_or_create_cart(request.user)
+        try:
+            apply_promotion_to_cart(cart, serializer.validated_data['code'])
+        except PromotionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_serialize_cart(cart))
+
+
+class CartRemovePromoView(CartPermissionMixin, APIView):
+    def delete(self, request):
+        cart = get_or_create_cart(request.user)
+        remove_promotion_from_cart(cart)
+        return Response(_serialize_cart(cart))

@@ -1,3 +1,4 @@
+from django.db.models import Avg, Count
 from django.shortcuts import render
 
 # Create your views here.
@@ -39,8 +40,14 @@ class ProductViewSet(CatalogWritePermissionMixin, viewsets.ModelViewSet):
     pagination_class = StandardPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = ProductFilter
-    search_fields = ['name', 'description']  # Full-text search
+    search_fields = ['name', 'description']
     ordering_fields = ['price', 'created_at']
+
+    def get_queryset(self):
+        return Product.objects.annotate(
+            average_rating=Avg('reviews__rating'),
+            review_count=Count('reviews'),
+        ).prefetch_related('variants__inventory')
 
 # Similarly for Variant and Inventory
 class VariantViewSet(CatalogWritePermissionMixin, viewsets.ModelViewSet):

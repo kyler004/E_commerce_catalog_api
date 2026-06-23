@@ -16,6 +16,9 @@ This is a robust backend API for an e-commerce platform, built using **Django** 
 - **Authentication:** Email/password registration with OTP email verification, JWT login, and OTP-based password reset.
 - **Shopping Cart:** Server-side cart per verified user with variant line items, stock validation, and price snapshotting.
 - **Orders / Checkout:** Convert cart to order with shipping address; stub payment flow decrements inventory on confirmation.
+- **Promotions:** Percentage or fixed discount codes; staff CRUD; apply to cart with checkout preview; usage tracked on payment confirmation.
+- **Wishlists:** Product-level saved items per user; move items directly into the cart.
+- **Reviews:** Verified-purchase reviews (paid order required); one review per user per product; product rating aggregates on catalog.
 
 ## proper Tech Stack
 
@@ -98,7 +101,7 @@ The API will be available at `http://127.0.0.1:8000/api/`.
 Tests use an in-memory SQLite database so PostgreSQL does not need to be running:
 
 ```bash
-python manage.py test accounts api cart orders
+python manage.py test accounts api cart orders promotions wishlists reviews
 ```
 
 ## Authentication
@@ -150,6 +153,8 @@ Cart endpoints are at `/api/cart/`. All cart operations require a verified user 
 | `/api/cart/items/` | POST | Add or increment `{ "variant", "quantity" }` |
 | `/api/cart/items/{id}/` | PATCH | Update item quantity |
 | `/api/cart/items/{id}/` | DELETE | Remove item |
+| `/api/cart/apply-promo/` | POST | Apply promotion code `{ "code" }` |
+| `/api/cart/promo/` | DELETE | Remove applied promotion |
 
 ```http
 POST /api/cart/items/
@@ -193,6 +198,42 @@ Content-Type: application/json
   }
 }
 ```
+
+## Promotions
+
+Staff manage promotion codes at `/api/promotions/` (staff JWT required). Customers apply codes to their cart before checkout.
+
+| Endpoint | Method | Auth | Description |
+| :------- | :----- | :--- | :---------- |
+| `/api/promotions/` | GET/POST | Staff | List or create promotions |
+| `/api/promotions/{id}/` | GET/PATCH/DELETE | Staff | Retrieve, update, or delete |
+| `/api/cart/apply-promo/` | POST | Verified user | Apply `{ "code" }` to cart |
+| `/api/cart/promo/` | DELETE | Verified user | Remove applied promotion |
+
+Discount is previewed on `GET /api/cart/` and applied at checkout. `used_count` increments when payment is confirmed.
+
+## Wishlist
+
+Wishlist endpoints are at `/api/wishlist/`. Items are saved at the **product** level (not variant).
+
+| Endpoint | Method | Description |
+| :------- | :----- | :---------- |
+| `/api/wishlist/` | GET | View wishlist |
+| `/api/wishlist/items/` | POST | Add `{ "product" }` |
+| `/api/wishlist/items/{id}/` | DELETE | Remove item |
+| `/api/wishlist/items/{id}/move-to-cart/` | POST | Move to cart `{ "variant", "quantity" }` |
+
+## Reviews
+
+Product reviews require a **verified purchase** (paid order containing the product). One review per user per product; rating 1–5.
+
+| Endpoint | Method | Auth | Description |
+| :------- | :----- | :--- | :---------- |
+| `/api/products/{id}/reviews/` | GET | Public | List product reviews |
+| `/api/products/{id}/reviews/` | POST | Verified user | Create review |
+| `/api/reviews/{id}/` | PATCH/DELETE | Owner | Update or delete own review |
+
+Product list/detail responses include `average_rating` and `review_count`.
 
 ## API Endpoints
 

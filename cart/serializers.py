@@ -51,4 +51,5 @@ class CartSerializer(serializers.Serializer):
     items = CartItemSerializer(many=True)
     item_count = serializers.IntegerField()
     subtotal = serializers.DecimalField(max_digits=12, decimal_places=2)
+    promotion = serializers.DictField(required=False, allow_null=True)
     updated_at = serializers.DateTimeField()

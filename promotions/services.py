@@ -1,7 +1,5 @@
 from decimal import Decimal
 
-from django.utils import timezone
-
 from promotions.models import Promotion
 
 
@@ -79,7 +77,8 @@ def resolve_promotion_for_checkout(cart, subtotal):
 
 def increment_promotion_usage(code):
     promotion = Promotion.objects.select_for_update().get(code=code.upper())
-    validate_promotion(promotion, Decimal('0.00'))
+    if not promotion.is_active:
+        raise PromotionError('This promotion is not active.')
     if promotion.max_uses is not None and promotion.used_count >= promotion.max_uses:
         raise PromotionError('This promotion has reached its usage limit.')
     promotion.used_count += 1
