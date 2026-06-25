@@ -6,6 +6,7 @@ from orders.views import (
     ConfirmPaymentView,
     OrderDetailView,
     OrderListView,
+    OrderReceiptView,
 )
 
 urlpatterns = [
@@ -14,4 +15,5 @@ urlpatterns = [
     path('<int:pk>/', OrderDetailView.as_view(), name='order-detail'),
     path('<int:order_id>/confirm-payment/', ConfirmPaymentView.as_view(), name='order-confirm-payment'),
     path('<int:order_id>/cancel/', CancelOrderView.as_view(), name='order-cancel'),
+    path('<int:order_id>/receipt/', OrderReceiptView.as_view(), name='order-receipt'),
 ]

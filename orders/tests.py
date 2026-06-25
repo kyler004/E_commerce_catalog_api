@@ -205,3 +205,79 @@ class OrderAPITestCase(OrderFixturesMixin, APITestCase):
         self._add_to_cart(quantity=3)
         response = self._checkout()
         self.assertEqual(response.json()['total'], '239.97')
+
+
+class OrderReceiptTestCase(OrderFixturesMixin, APITestCase):
+    def test_receipt_for_paid_order_returns_html(self):
+        self._add_to_cart()
+        order_id = self._checkout().json()['id']
+        self.client.post(f'{self.orders_url}{order_id}/confirm-payment/')
+
+        response = self.client.get(f'{self.orders_url}{order_id}/receipt/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Content-Type'], 'text/html')
+        
+        # Verify receipt contents
+        html = response.content.decode('utf-8')
+        self.assertIn('Receipt for Order #', html)
+        self.assertIn(f'Order ID: <strong>#{order_id}</strong>', html)
+        self.assertIn('Wireless Headphones', html)
+        self.assertIn('WH-L-RED', html)
+        self.assertIn('Jane Doe', html)
+        self.assertIn('Paris', html)
+        self.assertIn('$159.98', html)
+
+    def test_receipt_for_pending_order_returns_400(self):
+        self._add_to_cart()
+        order_id = self._checkout().json()['id']
+
+        response = self.client.get(f'{self.orders_url}{order_id}/receipt/')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'Receipts are only available for paid orders.')
+
+    def test_receipt_for_cancelled_order_returns_400(self):
+        self._add_to_cart()
+        order_id = self._checkout().json()['id']
+        self.client.post(f'{self.orders_url}{order_id}/cancel/')
+
+        response = self.client.get(f'{self.orders_url}{order_id}/receipt/')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'Receipts are only available for paid orders.')
+
+    def test_receipt_for_other_users_order_returns_404(self):
+        self._add_to_cart()
+        order_id = self._checkout().json()['id']
+        self.client.post(f'{self.orders_url}{order_id}/confirm-payment/')
+
+        # Authenticate as other user
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.get(f'{self.orders_url}{order_id}/receipt/')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_receipt_unauthenticated_returns_401(self):
+        self._add_to_cart()
+        order_id = self._checkout().json()['id']
+        self.client.post(f'{self.orders_url}{order_id}/confirm-payment/')
+
+        # Logout
+        self.client.force_authenticate(user=None)
+        response = self.client.get(f'{self.orders_url}{order_id}/receipt/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_receipt_unverified_returns_403(self):
+        self._add_to_cart()
+        order_id = self._checkout().json()['id']
+        self.client.post(f'{self.orders_url}{order_id}/confirm-payment/')
+
+        unverified = User.objects.create_user(
+            email='unverified@test.com',
+            password='TestPass123!',
+            is_active=True,
+        )
+        self.client.force_authenticate(user=unverified)
+        response = self.client.get(f'{self.orders_url}{order_id}/receipt/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_receipt_nonexistent_order_returns_404(self):
+        response = self.client.get(f'{self.orders_url}99999/receipt/')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

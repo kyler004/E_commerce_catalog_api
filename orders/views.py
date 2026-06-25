@@ -1,3 +1,5 @@
+from django.http import HttpResponse
+from django.template.loader import render_to_string
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -18,6 +20,7 @@ from orders.services import (
     cancel_order,
     checkout,
     confirm_payment,
+    get_receipt_order,
     get_user_order,
     get_user_orders,
 )
@@ -81,3 +84,16 @@ class CancelOrderView(OrderPermissionMixin, APIView):
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(OrderSerializer(order).data)
+
+
+class OrderReceiptView(OrderPermissionMixin, APIView):
+    def get(self, request, order_id):
+        try:
+            order = get_receipt_order(request.user, order_id)
+        except OrderNotFoundError:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        except OrderStateError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        html = render_to_string('orders/receipt.html', {'order': order})
+        return HttpResponse(html, content_type='text/html')

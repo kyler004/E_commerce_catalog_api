@@ -168,3 +168,10 @@ def cancel_order(user, order_id):
     order.status = Order.Status.CANCELLED
     order.save(update_fields=['status', 'updated_at'])
     return get_user_order(user, order.pk)
+
+
+def get_receipt_order(user, order_id):
+    order = get_user_order(user, order_id)
+    if order.status != Order.Status.PAID:
+        raise OrderStateError('Receipts are only available for paid orders.')
+    return order
