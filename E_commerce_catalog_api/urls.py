@@ -17,8 +17,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 
+from orders.views import SpendingSummaryView
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/account/spending-summary/', SpendingSummaryView.as_view(), name='account-spending-summary'),
     path('api/auth/', include('accounts.urls')),
     path('api/cart/', include('cart.urls')),
     path('api/wishlist/', include('wishlists.urls')),

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import timezone as datetime_timezone
 
 from django.utils import timezone
 from rest_framework import status
@@ -8,7 +9,7 @@ from accounts.models import User
 from api.models import Category, Inventory, Product, Variant
 from cart.models import CartItem
 from cart.services import add_item
-from orders.models import Order
+from orders.models import Order, OrderItem
 
 
 class OrderFixturesMixin:
@@ -71,6 +72,14 @@ class OrderFixturesMixin:
             format='json',
         )
 
+    def _paid_order(self, user=None, quantity=1, paid_at=None):
+        self._add_to_cart(user=user, quantity=quantity)
+        order_id = self._checkout(user=user).json()['id']
+        self.client.post(f'{self.orders_url}{order_id}/confirm-payment/')
+        if paid_at is not None:
+            Order.objects.filter(pk=order_id).update(paid_at=paid_at)
+        return Order.objects.get(pk=order_id)
+
 
 class OrderAPITestCase(OrderFixturesMixin, APITestCase):
     def test_checkout_creates_pending_order(self):
@@ -82,6 +91,8 @@ class OrderAPITestCase(OrderFixturesMixin, APITestCase):
         self.assertEqual(data['subtotal'], '159.98')
         self.assertEqual(len(data['items']), 1)
         self.assertEqual(data['items'][0]['sku'], 'WH-L-RED')
+        self.assertEqual(data['items'][0]['category_id'], self.category.id)
+        self.assertEqual(data['items'][0]['category_name'], 'Electronics')
         self.assertEqual(data['shipping']['city'], 'Paris')
         self.assertIsNone(data['paid_at'])
         self.assertEqual(CartItem.objects.count(), 0)
@@ -178,6 +189,34 @@ class OrderAPITestCase(OrderFixturesMixin, APITestCase):
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.json()['id'], order_id)
 
+    def test_list_orders_filters_by_status_and_date_range(self):
+        order_2026 = self._paid_order(
+            paid_at=timezone.datetime(2026, 6, 15, tzinfo=datetime_timezone.utc),
+        )
+        self._paid_order(
+            paid_at=timezone.datetime(2025, 6, 15, tzinfo=datetime_timezone.utc),
+        )
+        self._add_to_cart(quantity=1)
+        self._checkout()
+
+        response = self.client.get(
+            self.orders_url,
+            {
+                'status': 'paid',
+                'paid_after': '2026-01-01',
+                'paid_before': '2026-12-31',
+                'ordering': '-paid_at',
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()['count'], 1)
+        self.assertEqual(response.json()['results'][0]['id'], order_2026.id)
+
+    def test_list_orders_rejects_unsupported_ordering(self):
+        response = self.client.get(self.orders_url, {'ordering': 'total'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_retrieve_other_users_order_returns_404(self):
         self._add_to_cart()
         order_id = self._checkout().json()['id']
@@ -205,6 +244,105 @@ class OrderAPITestCase(OrderFixturesMixin, APITestCase):
         self._add_to_cart(quantity=3)
         response = self._checkout()
         self.assertEqual(response.json()['total'], '239.97')
+
+
+class SpendingSummaryTestCase(OrderFixturesMixin, APITestCase):
+    summary_url = '/api/account/spending-summary/'
+
+    def _create_order(
+        self,
+        *,
+        user=None,
+        status_value=Order.Status.PAID,
+        total='100.00',
+        discount_amount='0.00',
+        paid_at=None,
+        category=None,
+        quantity=1,
+    ):
+        user = user or self.user
+        category = category or self.category
+        paid_at = paid_at or timezone.datetime(2026, 6, 15, tzinfo=datetime_timezone.utc)
+        order = Order.objects.create(
+            user=user,
+            status=status_value,
+            subtotal=Decimal(total) + Decimal(discount_amount),
+            discount_amount=Decimal(discount_amount),
+            total=Decimal(total),
+            paid_at=paid_at if status_value == Order.Status.PAID else None,
+        )
+        OrderItem.objects.create(
+            order=order,
+            variant=self.variant,
+            product_name=self.product.name,
+            sku=self.variant.sku,
+            size=self.variant.size,
+            color=self.variant.color,
+            category_id=category.id,
+            category_name=category.name,
+            quantity=quantity,
+            unit_price=Decimal(total),
+            line_total=Decimal(total),
+        )
+        return order
+
+    def test_spending_summary_aggregates_paid_orders_only(self):
+        apparel = Category.objects.create(name='Apparel')
+        self._create_order(
+            total='100.00',
+            discount_amount='10.00',
+            paid_at=timezone.datetime(2026, 6, 15, tzinfo=datetime_timezone.utc),
+            category=apparel,
+            quantity=2,
+        )
+        self._create_order(
+            total='200.00',
+            discount_amount='20.00',
+            paid_at=timezone.datetime(2026, 7, 15, tzinfo=datetime_timezone.utc),
+        )
+        self._create_order(status_value=Order.Status.PENDING, total='999.00')
+        self._create_order(status_value=Order.Status.CANCELLED, total='999.00')
+        self._create_order(user=self.other_user, total='500.00')
+
+        response = self.client.get(self.summary_url, {'period': 'all'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data['currency'], 'USD')
+        self.assertEqual(data['lifetime_spend'], '300.00')
+        self.assertEqual(data['paid_order_count'], 2)
+        self.assertEqual(data['pending_order_count'], 1)
+        self.assertEqual(data['cancelled_order_count'], 1)
+        self.assertEqual(data['total_savings'], '30.00')
+        self.assertEqual(data['average_order_value'], '150.00')
+        self.assertEqual(
+            data['spending_by_month'],
+            [
+                {'period': '2026-06', 'total': '100.00', 'order_count': 1},
+                {'period': '2026-07', 'total': '200.00', 'order_count': 1},
+            ],
+        )
+        self.assertEqual(data['spending_by_category'][0]['category_name'], 'Electronics')
+        self.assertEqual(data['spending_by_category'][0]['total'], '200.00')
+        self.assertEqual(data['recent_paid_orders'][0]['item_count'], 1)
+
+    def test_spending_summary_requires_verified_user(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.get(self.summary_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        unverified = User.objects.create_user(
+            email='summary-unverified@test.com',
+            password='TestPass123!',
+            is_active=True,
+        )
+        self.client.force_authenticate(user=unverified)
+        response = self.client.get(self.summary_url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_spending_summary_rejects_invalid_period(self):
+        response = self.client.get(self.summary_url, {'period': 'year'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class OrderReceiptTestCase(OrderFixturesMixin, APITestCase):

@@ -11,7 +11,9 @@ from api.views import StandardPagination
 from orders.serializers import (
     CheckoutSerializer,
     OrderListSerializer,
+    OrderListQuerySerializer,
     OrderSerializer,
+    SpendingSummaryQuerySerializer,
 )
 from orders.services import (
     OrderNotFoundError,
@@ -20,7 +22,9 @@ from orders.services import (
     cancel_order,
     checkout,
     confirm_payment,
+    filter_user_orders,
     get_receipt_order,
+    get_spending_summary,
     get_user_order,
     get_user_orders,
 )
@@ -50,7 +54,9 @@ class OrderListView(OrderPermissionMixin, ListAPIView):
     pagination_class = StandardPagination
 
     def get_queryset(self):
-        return get_user_orders(self.request.user)
+        query_serializer = OrderListQuerySerializer(data=self.request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        return filter_user_orders(self.request.user, query_serializer.validated_data)
 
 
 class OrderDetailView(OrderPermissionMixin, RetrieveAPIView):
@@ -97,3 +103,15 @@ class OrderReceiptView(OrderPermissionMixin, APIView):
 
         html = render_to_string('orders/receipt.html', {'order': order})
         return HttpResponse(html, content_type='text/html')
+
+
+class SpendingSummaryView(OrderPermissionMixin, APIView):
+    def get(self, request):
+        serializer = SpendingSummaryQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        return Response(
+            get_spending_summary(
+                request.user,
+                period=serializer.validated_data['period'],
+            )
+        )

@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, time
 
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -7,7 +8,7 @@ from rest_framework import serializers
 from orders.models import Order, OrderItem, ShippingAddress
 
 
-def parse_datetime_query_param(value):
+def parse_datetime_query_param(value, end_of_day=False):
     parsed_datetime = parse_datetime(value)
     if parsed_datetime is not None:
         if timezone.is_naive(parsed_datetime):
@@ -18,7 +19,8 @@ def parse_datetime_query_param(value):
     if parsed_date is None:
         raise serializers.ValidationError('Use YYYY-MM-DD or an ISO 8601 datetime.')
 
-    return parsed_date
+    boundary = time.max if end_of_day else time.min
+    return timezone.make_aware(datetime.combine(parsed_date, boundary))
 
 
 class ShippingAddressSerializer(serializers.ModelSerializer):
@@ -110,7 +112,10 @@ class OrderListQuerySerializer(serializers.Serializer):
             'created_before',
         ):
             if field in attrs:
-                attrs[field] = parse_datetime_query_param(attrs[field])
+                attrs[field] = parse_datetime_query_param(
+                    attrs[field],
+                    end_of_day=field.endswith('_before'),
+                )
         return attrs
 
 
