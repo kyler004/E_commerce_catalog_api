@@ -49,6 +49,8 @@ class OrderItem(models.Model):
     sku = models.CharField(max_length=100)
     size = models.CharField(max_length=50, blank=True)
     color = models.CharField(max_length=50, blank=True)
+    category_id = models.PositiveIntegerField(null=True, blank=True)
+    category_name = models.CharField(max_length=255, blank=True)
     quantity = models.PositiveIntegerField()
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     line_total = models.DecimalField(max_digits=12, decimal_places=2)

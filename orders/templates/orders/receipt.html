@@ -404,8 +404,7 @@
           <p>{{ order.shipping_address.address_line2 }}</p>
           {% endif %}
           <p>
-            {{ order.shipping_address.city }}, {{
-            order.shipping_address.postal_code }}
+            {{ order.shipping_address.city }}, {{ order.shipping_address.postal_code }}
           </p>
           <p>{{ order.shipping_address.country }}</p>
         </div>
@@ -427,9 +426,7 @@
               <div class="item-info">
                 <span class="item-name">{{ item.product_name }}</span>
                 <span class="item-meta">
-                  SKU: {{ item.sku }} {% if item.size %} | Size: {{ item.size
-                  }}{% endif %} {% if item.color %} | Color: {{ item.color }}{%
-                  endif %}
+                  SKU: {{ item.sku }}{% if item.size %} | Size: {{ item.size }}{% endif %}{% if item.color %} | Color: {{ item.color }}{% endif %}
                 </span>
               </div>
             </td>
@@ -450,8 +447,7 @@
           {% if order.discount_amount > 0 %}
           <tr>
             <td class="label">
-              Discount {% if order.promotion_code %}({{ order.promotion_code
-              }}){% endif %}
+              Discount {% if order.promotion_code %}({{ order.promotion_code }}){% endif %}
             </td>
             <td class="value">-${{ order.discount_amount }}</td>
           </tr>
