@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -89,6 +90,26 @@ class PromotionAPITestCase(PromotionFixturesMixin, APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_unverified_staff_cannot_create_promotion(self):
+        unverified_staff = User.objects.create_user(
+            email='unverified-staff@test.com',
+            password='TestPass123!',
+            is_active=True,
+            is_staff=True,
+        )
+        self.client.force_authenticate(user=unverified_staff)
+        response = self.client.post(
+            '/api/promotions/',
+            {
+                'code': 'NOPE',
+                'discount_type': 'fixed',
+                'discount_value': '5.00',
+                'is_active': True,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_apply_promo_to_cart(self):
         add_item(self.user, self.variant.id, 2)
         response = self.client.post(
@@ -98,6 +119,55 @@ class PromotionAPITestCase(PromotionFixturesMixin, APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()['promotion']['code'], 'SAVE10')
+
+    def test_apply_inactive_promo_returns_400(self):
+        self.promotion.is_active = False
+        self.promotion.save(update_fields=['is_active'])
+        add_item(self.user, self.variant.id, 1)
+        response = self.client.post(
+            '/api/cart/apply-promo/',
+            {'code': 'SAVE10'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'This promotion is not active.')
+
+    def test_apply_expired_promo_returns_400(self):
+        self.promotion.valid_until = timezone.now() - timedelta(days=1)
+        self.promotion.save(update_fields=['valid_until'])
+        add_item(self.user, self.variant.id, 1)
+        response = self.client.post(
+            '/api/cart/apply-promo/',
+            {'code': 'SAVE10'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'This promotion is not currently valid.')
+
+    def test_apply_promo_below_minimum_returns_400(self):
+        self.promotion.min_order_amount = Decimal('100.00')
+        self.promotion.save(update_fields=['min_order_amount'])
+        add_item(self.user, self.variant.id, 1)
+        response = self.client.post(
+            '/api/cart/apply-promo/',
+            {'code': 'SAVE10'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Minimum order amount', response.json()['detail'])
+
+    def test_apply_promo_at_usage_limit_returns_400(self):
+        self.promotion.max_uses = 1
+        self.promotion.used_count = 1
+        self.promotion.save(update_fields=['max_uses', 'used_count'])
+        add_item(self.user, self.variant.id, 1)
+        response = self.client.post(
+            '/api/cart/apply-promo/',
+            {'code': 'SAVE10'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'This promotion has reached its usage limit.')
 
     def test_checkout_applies_discount(self):
         add_item(self.user, self.variant.id, 2)
@@ -112,6 +182,24 @@ class PromotionAPITestCase(PromotionFixturesMixin, APITestCase):
         self.assertEqual(data['promotion_code'], 'SAVE10')
         self.assertEqual(data['discount_amount'], '16.00')
         self.assertEqual(data['total'], '143.98')
+
+    def test_fixed_discount_is_capped_at_subtotal(self):
+        capped = Promotion.objects.create(
+            code='FREE',
+            discount_type=Promotion.DiscountType.FIXED,
+            discount_value=Decimal('500.00'),
+            is_active=True,
+        )
+        add_item(self.user, self.variant.id, 1)
+        self.client.post('/api/cart/apply-promo/', {'code': capped.code}, format='json')
+        response = self.client.post(
+            '/api/orders/checkout/',
+            {'shipping': self.shipping_payload},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.json()['discount_amount'], '79.99')
+        self.assertEqual(response.json()['total'], '0.00')
 
     def test_used_count_increments_on_payment(self):
         add_item(self.user, self.variant.id, 1)

@@ -36,6 +36,21 @@ class AuthAPITestCase(APITestCase):
 
     @patch('accounts.views.send_otp_email')
     @patch('accounts.services.otp._generate_code', return_value='123456')
+    def test_register_duplicate_email_returns_400(self, _mock_code, _mock_send):
+        self.client.post(
+            self.register_url,
+            {'email': self.email, 'password': self.password},
+            format='json',
+        )
+        response = self.client.post(
+            self.register_url,
+            {'email': self.email.upper(), 'password': self.password},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch('accounts.views.send_otp_email')
+    @patch('accounts.services.otp._generate_code', return_value='123456')
     def test_verify_email_activates_user(self, _mock_code, _mock_send):
         self.client.post(
             self.register_url,
@@ -133,6 +148,28 @@ class AuthAPITestCase(APITestCase):
         self.assertEqual(login_response.status_code, status.HTTP_200_OK)
 
     @patch('accounts.views.send_otp_email')
+    def test_forgot_password_for_unknown_email_does_not_send(self, mock_send):
+        response = self.client.post(
+            self.forgot_url,
+            {'email': 'missing@example.com'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_send.assert_not_called()
+
+    @patch('accounts.views.send_otp_email')
+    @patch('accounts.services.otp._generate_code', return_value='123456')
+    def test_reset_password_rejects_wrong_otp(self, _mock_code, _mock_send):
+        self._create_verified_user()
+        self.client.post(self.forgot_url, {'email': self.email}, format='json')
+        response = self.client.post(
+            self.reset_url,
+            {'email': self.email, 'otp': '000000', 'new_password': 'NewSecurePass456!'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch('accounts.views.send_otp_email')
     @patch('accounts.services.otp._generate_code', return_value='123456')
     def test_resend_otp_enforces_cooldown(self, _mock_code, _mock_send):
         self.client.post(
@@ -146,6 +183,28 @@ class AuthAPITestCase(APITestCase):
             format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_resend_signup_otp_for_verified_user_returns_400(self):
+        self._create_verified_user()
+        response = self.client.post(
+            self.resend_url,
+            {'email': self.email, 'purpose': EmailOTP.Purpose.SIGNUP},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_resend_password_reset_for_unverified_user_returns_400(self):
+        User.objects.create_user(
+            email=self.email,
+            password=self.password,
+            is_active=False,
+        )
+        response = self.client.post(
+            self.resend_url,
+            {'email': self.email, 'purpose': EmailOTP.Purpose.PASSWORD_RESET},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @patch('accounts.views.send_otp_email')
     @patch('accounts.services.otp._generate_code', return_value='123456')

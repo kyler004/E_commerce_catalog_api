@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import timezone as datetime_timezone
+from datetime import timedelta, timezone as datetime_timezone
 
 from django.utils import timezone
 from rest_framework import status
@@ -213,6 +213,32 @@ class OrderAPITestCase(OrderFixturesMixin, APITestCase):
         self.assertEqual(response.json()['count'], 1)
         self.assertEqual(response.json()['results'][0]['id'], order_2026.id)
 
+    def test_list_orders_filters_by_created_date_range(self):
+        first_order = self._paid_order()
+        second_order = self._paid_order()
+        Order.objects.filter(pk=first_order.id).update(
+            created_at=timezone.datetime(2026, 1, 15, tzinfo=datetime_timezone.utc),
+        )
+        Order.objects.filter(pk=second_order.id).update(
+            created_at=timezone.datetime(2026, 3, 15, tzinfo=datetime_timezone.utc),
+        )
+
+        response = self.client.get(
+            self.orders_url,
+            {
+                'created_after': '2026-03-01',
+                'created_before': '2026-03-31',
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()['count'], 1)
+        self.assertEqual(response.json()['results'][0]['id'], second_order.id)
+
+    def test_list_orders_rejects_invalid_date_filter(self):
+        response = self.client.get(self.orders_url, {'paid_after': 'not-a-date'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_list_orders_rejects_unsupported_ordering(self):
         response = self.client.get(self.orders_url, {'ordering': 'total'})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -343,6 +369,33 @@ class SpendingSummaryTestCase(OrderFixturesMixin, APITestCase):
     def test_spending_summary_rejects_invalid_period(self):
         response = self.client.get(self.summary_url, {'period': 'year'})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_spending_summary_period_limits_chart_aggregates_only(self):
+        recent_paid_at = timezone.now()
+        old_paid_at = recent_paid_at - timedelta(days=400)
+        self._create_order(total='50.00', paid_at=old_paid_at)
+        self._create_order(total='100.00', paid_at=recent_paid_at)
+
+        response = self.client.get(self.summary_url, {'period': '12m'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data['lifetime_spend'], '150.00')
+        self.assertEqual(data['paid_order_count'], 2)
+        self.assertEqual(len(data['spending_by_month']), 1)
+        self.assertEqual(data['spending_by_month'][0]['total'], '100.00')
+        self.assertEqual(data['spending_by_category'][0]['total'], '100.00')
+
+    def test_spending_summary_uses_created_at_fallback_for_missing_paid_at(self):
+        order = self._create_order(total='75.00')
+        Order.objects.filter(pk=order.pk).update(paid_at=None)
+
+        response = self.client.get(self.summary_url, {'period': 'all'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data['lifetime_spend'], '75.00')
+        self.assertIsNotNone(data['recent_paid_orders'][0]['paid_at'])
 
 
 class OrderReceiptTestCase(OrderFixturesMixin, APITestCase):

@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from api.models import Category, Inventory, Product, Variant
 from cart.models import Cart, CartItem
+from promotions.models import Promotion
 
 
 class CartFixturesMixin:
@@ -90,6 +91,23 @@ class CartAPITestCase(CartFixturesMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('Insufficient stock', response.json()['detail'])
 
+    def test_add_missing_variant_returns_400(self):
+        response = self.client.post(
+            self.items_url,
+            {'variant': 99999, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'Variant not found.')
+
+    def test_add_zero_quantity_returns_400(self):
+        response = self.client.post(
+            self.items_url,
+            {'variant': self.variant.id, 'quantity': 0},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_update_item_quantity(self):
         add_response = self.client.post(
             self.items_url,
@@ -104,6 +122,35 @@ class CartAPITestCase(CartFixturesMixin, APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()['quantity'], 4)
+
+    def test_update_item_exceeds_stock_returns_400(self):
+        add_response = self.client.post(
+            self.items_url,
+            {'variant': self.variant.id, 'quantity': 2},
+            format='json',
+        )
+        item_id = add_response.json()['id']
+        response = self.client.patch(
+            f'{self.items_url}{item_id}/',
+            {'quantity': 51},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Insufficient stock', response.json()['detail'])
+
+    def test_update_item_zero_quantity_returns_400(self):
+        add_response = self.client.post(
+            self.items_url,
+            {'variant': self.variant.id, 'quantity': 2},
+            format='json',
+        )
+        item_id = add_response.json()['id']
+        response = self.client.patch(
+            f'{self.items_url}{item_id}/',
+            {'quantity': 0},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_remove_item(self):
         add_response = self.client.post(
@@ -167,7 +214,52 @@ class CartAPITestCase(CartFixturesMixin, APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_delete_foreign_item_returns_404(self):
+        add_response = self.client.post(
+            self.items_url,
+            {'variant': self.variant.id, 'quantity': 1},
+            format='json',
+        )
+        item_id = add_response.json()['id']
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.delete(f'{self.items_url}{item_id}/')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_get_or_create_cart_on_first_access(self):
         self.assertFalse(Cart.objects.filter(user=self.user).exists())
         self.client.get(self.cart_url)
         self.assertTrue(Cart.objects.filter(user=self.user).exists())
+
+    def test_apply_invalid_promotion_returns_400(self):
+        self.client.post(
+            self.items_url,
+            {'variant': self.variant.id, 'quantity': 1},
+            format='json',
+        )
+        response = self.client.post(
+            '/api/cart/apply-promo/',
+            {'code': 'MISSING'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'Invalid promotion code.')
+
+    def test_inactive_promotion_preview_is_hidden(self):
+        promo = Promotion.objects.create(
+            code='OFF',
+            discount_type=Promotion.DiscountType.FIXED,
+            discount_value=Decimal('5.00'),
+            is_active=True,
+        )
+        self.client.post(
+            self.items_url,
+            {'variant': self.variant.id, 'quantity': 1},
+            format='json',
+        )
+        self.client.post('/api/cart/apply-promo/', {'code': promo.code}, format='json')
+        promo.is_active = False
+        promo.save(update_fields=['is_active'])
+
+        response = self.client.get(self.cart_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.json()['promotion'])

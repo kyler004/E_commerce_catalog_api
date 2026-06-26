@@ -19,6 +19,13 @@ class WishlistAPITestCase(APITestCase):
         )
         self.user.email_verified_at = timezone.now()
         self.user.save(update_fields=['email_verified_at'])
+        self.other_user = User.objects.create_user(
+            email='other@test.com',
+            password='TestPass123!',
+            is_active=True,
+        )
+        self.other_user.email_verified_at = timezone.now()
+        self.other_user.save(update_fields=['email_verified_at'])
         self.category = Category.objects.create(name='Electronics')
         self.product = Product.objects.create(
             name='Wireless Headphones',
@@ -56,6 +63,15 @@ class WishlistAPITestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_add_missing_product_returns_400(self):
+        response = self.client.post(
+            f'{self.url}items/',
+            {'product': 99999},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'Product not found.')
+
     def test_move_to_cart(self):
         add_response = self.client.post(
             f'{self.url}items/',
@@ -72,7 +88,57 @@ class WishlistAPITestCase(APITestCase):
         self.assertEqual(CartItem.objects.count(), 1)
         self.assertEqual(WishlistItem.objects.count(), 0)
 
+    def test_move_to_cart_rejects_variant_for_different_product(self):
+        other_product = Product.objects.create(
+            name='Bluetooth Speaker',
+            description='Portable speaker',
+            price=Decimal('49.99'),
+            category=self.category,
+        )
+        other_variant = Variant.objects.create(
+            product=other_product,
+            size='One',
+            color='Black',
+            sku='SPK-ONE-BLK',
+        )
+        Inventory.objects.create(variant=other_variant, quantity=10)
+        add_response = self.client.post(
+            f'{self.url}items/',
+            {'product': self.product.id},
+            format='json',
+        )
+        item_id = add_response.json()['id']
+
+        response = self.client.post(
+            f'{self.url}items/{item_id}/move-to-cart/',
+            {'variant': other_variant.id, 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'Variant does not belong to this product.')
+
+    def test_delete_other_users_wishlist_item_returns_404(self):
+        add_response = self.client.post(
+            f'{self.url}items/',
+            {'product': self.product.id},
+            format='json',
+        )
+        item_id = add_response.json()['id']
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.delete(f'{self.url}items/{item_id}/')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_unauthenticated_returns_401(self):
         self.client.force_authenticate(user=None)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_unverified_user_returns_403(self):
+        unverified = User.objects.create_user(
+            email='unverified-wishlist@test.com',
+            password='TestPass123!',
+            is_active=True,
+        )
+        self.client.force_authenticate(user=unverified)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

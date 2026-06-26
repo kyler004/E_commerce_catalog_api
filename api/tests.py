@@ -164,11 +164,13 @@ class ProductAPITestCase(CatalogFixturesMixin, TestCase):
                 "description": "Fitness tracker",
                 "price": "199.99",
                 "category": self.category.id,
+                "image_url": "https://example.com/watch.jpg",
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Product.objects.filter(name="Smart Watch").count(), 1)
+        self.assertEqual(response.json()["image_url"], "https://example.com/watch.jpg")
 
     def test_create_product_missing_required_fields_returns_400(self):
         response = self.client.post(
@@ -578,6 +580,89 @@ class ModelTestCase(CatalogFixturesMixin, TestCase):
 
 
 class CatalogWriteAuthTestCase(CatalogFixturesMixin, TestCase):
+    def test_unauthenticated_catalog_write_endpoints_return_401(self):
+        self.client.force_authenticate(user=None)
+        cases = [
+            (
+                "post",
+                "/api/categories/",
+                {"name": "Blocked", "description": ""},
+            ),
+            (
+                "post",
+                "/api/products/",
+                {
+                    "name": "Blocked Product",
+                    "description": "Should fail",
+                    "price": "10.00",
+                    "category": self.category.id,
+                },
+            ),
+            (
+                "post",
+                "/api/variants/",
+                {
+                    "product": self.product.id,
+                    "size": "M",
+                    "color": "Black",
+                    "sku": "BLOCKED-SKU",
+                },
+            ),
+            (
+                "patch",
+                f"/api/inventories/{self.inventory.id}/",
+                {"quantity": 1},
+            ),
+        ]
+        for method, url, payload in cases:
+            with self.subTest(url=url):
+                response = getattr(self.client, method)(url, payload, format="json")
+                self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_unverified_catalog_write_endpoints_return_403(self):
+        unverified = User.objects.create_user(
+            email='unverified-catalog@test.com',
+            password='TestPass123!',
+            is_active=True,
+        )
+        self.client.force_authenticate(user=unverified)
+        cases = [
+            (
+                "post",
+                "/api/categories/",
+                {"name": "Blocked", "description": ""},
+            ),
+            (
+                "post",
+                "/api/products/",
+                {
+                    "name": "Blocked Product",
+                    "description": "Should fail",
+                    "price": "10.00",
+                    "category": self.category.id,
+                },
+            ),
+            (
+                "post",
+                "/api/variants/",
+                {
+                    "product": self.product.id,
+                    "size": "M",
+                    "color": "Black",
+                    "sku": "BLOCKED-SKU",
+                },
+            ),
+            (
+                "patch",
+                f"/api/inventories/{self.inventory.id}/",
+                {"quantity": 1},
+            ),
+        ]
+        for method, url, payload in cases:
+            with self.subTest(url=url):
+                response = getattr(self.client, method)(url, payload, format="json")
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_unauthenticated_create_product_returns_401(self):
         self.client.force_authenticate(user=None)
         response = self.client.post(

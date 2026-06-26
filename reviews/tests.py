@@ -77,6 +77,50 @@ class ReviewAPITestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_duplicate_review_returns_400(self):
+        self._complete_purchase()
+        payload = {'rating': 5, 'title': 'Great', 'body': 'Love these headphones.'}
+        self.client.post(f'/api/products/{self.product.id}/reviews/', payload, format='json')
+        response = self.client.post(
+            f'/api/products/{self.product.id}/reviews/',
+            payload,
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()['detail'], 'You have already reviewed this product.')
+
+    def test_create_review_rejects_invalid_rating(self):
+        self._complete_purchase()
+        response = self.client.post(
+            f'/api/products/{self.product.id}/reviews/',
+            {'rating': 6, 'title': 'Too high', 'body': 'Invalid rating.'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_review_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            f'/api/products/{self.product.id}/reviews/',
+            {'rating': 5, 'title': 'Great', 'body': 'Love these headphones.'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_review_requires_verified_user(self):
+        unverified = User.objects.create_user(
+            email='unverified-review@test.com',
+            password='TestPass123!',
+            is_active=True,
+        )
+        self.client.force_authenticate(user=unverified)
+        response = self.client.post(
+            f'/api/products/{self.product.id}/reviews/',
+            {'rating': 5, 'title': 'Great', 'body': 'Love these headphones.'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_list_reviews_is_public(self):
         self._complete_purchase()
         self.client.post(
@@ -115,3 +159,30 @@ class ReviewAPITestCase(APITestCase):
             format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_can_update_own_review(self):
+        self._complete_purchase()
+        review_id = self.client.post(
+            f'/api/products/{self.product.id}/reviews/',
+            {'rating': 4, 'title': 'Good', 'body': 'Solid product.'},
+            format='json',
+        ).json()['id']
+        response = self.client.patch(
+            f'/api/reviews/{review_id}/',
+            {'rating': 5, 'title': 'Excellent'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()['rating'], 5)
+        self.assertEqual(response.json()['title'], 'Excellent')
+
+    def test_can_delete_own_review(self):
+        self._complete_purchase()
+        review_id = self.client.post(
+            f'/api/products/{self.product.id}/reviews/',
+            {'rating': 4, 'title': 'Good', 'body': 'Solid product.'},
+            format='json',
+        ).json()['id']
+        response = self.client.delete(f'/api/reviews/{review_id}/')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Review.objects.filter(pk=review_id).exists())
