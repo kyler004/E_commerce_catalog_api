@@ -5,3 +5,7 @@ django-filter>=23.0
 psycopg[binary]>=3.1
 python-dotenv>=1.0
 django-cors-headers>=4.3
+gunicorn>=22.0
+whitenoise>=6.6
+dj-database-url>=2.1
+drf-spectacular>=0.27

@@ -377,6 +377,37 @@ Additional integration docs live in `Documentation/`:
 - `Documentation/router.md` — full frontend route/API integration guide.
 - `Documentation/receipt_integration_guide.md` — receipt HTML integration and print guidance.
 - `Documentation/spending_summary_integration_guide.md` — order analytics and spending summary integration.
+- `Documentation/deployment_render.md` — Render deployment guide (build, migrate, env vars, checklist).
+
+### API documentation (Swagger)
+
+When the server is running:
+
+| Resource | URL |
+| :--- | :--- |
+| Swagger UI | `/api/docs/` |
+| OpenAPI schema | `/api/schema/` |
+
+Example locally: `http://127.0.0.1:8000/api/docs/`
+
+## Deployment (Render)
+
+Production runtime uses **Gunicorn**, **WhiteNoise** (static files), and **DATABASE_URL** (Render Postgres). See [Documentation/deployment_render.md](Documentation/deployment_render.md) for full steps.
+
+Quick reference:
+
+```bash
+# Build
+pip install -r requirements.txt && python manage.py collectstatic --noinput
+
+# Pre-deploy
+python manage.py migrate
+
+# Start
+gunicorn E_commerce_catalog_api.wsgi:application --bind 0.0.0.0:$PORT
+```
+
+Required production env vars: `SECRET_KEY`, `DEBUG=False`, `DATABASE_URL`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, and SMTP settings for OTP email.
 
 ## Development Notes
 
